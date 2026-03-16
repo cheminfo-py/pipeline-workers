@@ -23,20 +23,29 @@ MAX_RESULT_RETRIES = 3
 MAX_LOG_SIZE = 1_048_576
 
 
-class _TeeStream:
-    """Write to both the original stream and a capture buffer."""
+_thread_local = threading.local()
 
-    def __init__(self, original, buffer):
+
+class _TeeStream:
+    """Write to the original stream and the current thread's log buffer.
+
+    Installed once on ``sys.stdout``/``sys.stderr``. Per-thread capture is
+    controlled by setting ``_thread_local.log_buffer`` to an ``io.StringIO``
+    before calling the worker function and clearing it afterwards.  This
+    avoids the race condition of swapping ``sys.stdout`` per-thread.
+    """
+
+    def __init__(self, original):
         self.original = original
-        self.buffer = buffer
 
     def write(self, text):
         self.original.write(text)
-        self.buffer.write(text)
+        buf = getattr(_thread_local, "log_buffer", None)
+        if buf is not None:
+            buf.write(text)
 
     def flush(self):
         self.original.flush()
-        self.buffer.flush()
 
 
 def _get_system_info(runner_id):
@@ -109,6 +118,10 @@ class WorkerClient:
         determine how many listener threads to start.  Handles SIGTERM and
         SIGINT for fast Docker shutdown.
         """
+        # Install TeeStream once — per-thread capture is controlled via
+        # _thread_local.log_buffer set/cleared around each task.
+        sys.stdout = _TeeStream(sys.stdout)
+        sys.stderr = _TeeStream(sys.stderr)
 
         def _handle_signal(signum, _frame):
             name = signal.Signals(signum).name
@@ -176,12 +189,8 @@ class WorkerClient:
                             task_id, runner_id
                         )
 
-                        # Capture stdout/stderr during task processing
-                        log_buffer = io.StringIO()
-                        old_stdout = sys.stdout
-                        old_stderr = sys.stderr
-                        sys.stdout = _TeeStream(old_stdout, log_buffer)
-                        sys.stderr = _TeeStream(old_stderr, log_buffer)
+                        # Enable per-thread log capture via _TeeStream
+                        _thread_local.log_buffer = io.StringIO()
 
                         start = time.time()
                         try:
@@ -195,7 +204,12 @@ class WorkerClient:
                                     / self._stats["completedTasks"]
                                 )
                                 current_stats = dict(self._stats)
-                            logs = log_buffer.getvalue()[:MAX_LOG_SIZE] or None
+                            logs = (
+                                _thread_local.log_buffer.getvalue()[
+                                    :MAX_LOG_SIZE
+                                ]
+                                or None
+                            )
                             self._post_result(
                                 task_id, result, runner_id, current_stats,
                                 logs
@@ -208,7 +222,12 @@ class WorkerClient:
                             with self._stats_lock:
                                 self._stats["failedTasks"] += 1
                                 current_stats = dict(self._stats)
-                            logs = log_buffer.getvalue()[:MAX_LOG_SIZE] or None
+                            logs = (
+                                _thread_local.log_buffer.getvalue()[
+                                    :MAX_LOG_SIZE
+                                ]
+                                or None
+                            )
                             self._post_error(
                                 task_id, str(error), runner_id, current_stats,
                                 logs
@@ -218,8 +237,7 @@ class WorkerClient:
                                 f"failed: {error}"
                             )
                         finally:
-                            sys.stdout = old_stdout
-                            sys.stderr = old_stderr
+                            _thread_local.log_buffer = None
                             stop_heartbeat.set()
 
                         # Reconnect after each task
