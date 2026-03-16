@@ -17,6 +17,7 @@ Usage:
     SERVER_URL=http://pipeline.cheminfo.org TOKEN=your-token python worker.py
 """
 
+import math
 import os
 import re
 import shutil
@@ -182,6 +183,40 @@ def parse_zero_point_energy(stdout):
     return None
 
 
+def fold_spectrum(modes, start=0.0, end=4000.0, step=0.5, width=10.0):
+    """Broaden discrete vibrational modes into a continuous IR spectrum.
+
+    Applies Lorentzian line broadening to each mode and sums the
+    contributions on an evenly-spaced wavenumber grid.
+
+    Args:
+        modes: List of dicts with 'frequency' (cm-1) and 'intensity' (km/mol).
+        start: Start of the wavenumber range (cm-1).
+        end: End of the wavenumber range (cm-1).
+        step: Spacing between grid points (cm-1).
+        width: Full width at half maximum of each peak (cm-1).
+
+    Returns:
+        Tuple of (wavenumbers, intensities) as lists of floats.
+    """
+    num_points = int((end - start) / step) + 1
+    wavenumbers = [start + i * step for i in range(num_points)]
+    intensities = [0.0] * num_points
+    half_width = width / 2.0
+
+    for mode in modes:
+        frequency = mode["frequency"]
+        intensity = mode["intensity"]
+        if intensity <= 0 or frequency <= 0:
+            continue
+        for i in range(num_points):
+            delta = wavenumbers[i] - frequency
+            # Lorentzian: L(x) = (gamma/2)^2 / ((x - x0)^2 + (gamma/2)^2)
+            intensities[i] += intensity * half_width**2 / (delta**2 + half_width**2)
+
+    return wavenumbers, intensities
+
+
 # --- Worker processing function ---
 
 
@@ -201,6 +236,8 @@ def compute_ir(data, parameters=None):
     Returns:
         Dict with:
             - "modes": list of {frequency, intensity} for each vibrational mode
+            - "wavenumbers": evenly-spaced wavenumber grid (cm-1)
+            - "irIntensities": broadened IR spectrum on the grid (km/mol)
             - "energy": total energy in Hartree (if available)
             - "zeroPointEnergy": zero-point energy in Hartree (if available)
     """
@@ -261,9 +298,12 @@ def compute_ir(data, parameters=None):
         )
 
         # Send subprocess output to the server log (not Docker logs)
-        from pipeline_worker import log
-        log(result.stdout)
-        log(result.stderr)
+        try:
+            from pipeline_worker import log
+            log(result.stdout)
+            log(result.stderr)
+        except ImportError:
+            pass
 
         if result.returncode != 0:
             raise RuntimeError(
@@ -274,7 +314,13 @@ def compute_ir(data, parameters=None):
         energy = parse_xtb_energy(work_dir, result.stdout)
         zero_point_energy = parse_zero_point_energy(result.stdout)
 
-        output = {"modes": modes}
+        wavenumbers, ir_intensities = fold_spectrum(modes)
+
+        output = {
+            "modes": modes,
+            "wavenumbers": wavenumbers,
+            "irIntensities": ir_intensities,
+        }
         if energy is not None:
             output["energy"] = energy
         if zero_point_energy is not None:

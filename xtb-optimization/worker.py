@@ -238,9 +238,12 @@ def optimize_geometry(data, parameters=None):
         )
 
         # Send subprocess output to the server log (not Docker logs)
-        from pipeline_worker import log
-        log(result.stdout)
-        log(result.stderr)
+        try:
+            from pipeline_worker import log
+            log(result.stdout)
+            log(result.stderr)
+        except ImportError:
+            pass
 
         if result.returncode != 0:
             raise RuntimeError(
