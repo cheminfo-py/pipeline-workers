@@ -1,8 +1,8 @@
 services:
-  abinitio-worker:
+  xtb-optimization-worker:
     build:
       context: .
-      dockerfile: abinitio-optimization/Dockerfile
+      dockerfile: xtb-optimization/Dockerfile
     restart: unless-stopped
     stop_grace_period: 3s
     read_only: true
@@ -29,3 +29,65 @@ services:
     environment:
       - SERVER_URL=https://pipeline.cheminfo.org
       - INSTANCES=8
+
+  xtb-ir-worker:
+    build:
+      context: .
+      dockerfile: xtb-ir/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 3s
+    read_only: true
+    user: '65534:65534'
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '8'
+          pids: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 200m
+        max-file: '3'
+    tmpfs:
+      - /tmp:size=500m,noexec,nosuid
+    env_file:
+      - .env
+    environment:
+      - SERVER_URL=https://pipeline.cheminfo.org
+      - INSTANCES=8
+
+  conformer-generation-worker:
+    build:
+      context: .
+      dockerfile: conformer-generation/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 3s
+    read_only: true
+    user: '65534:65534'
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '4'
+          pids: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 200m
+        max-file: '3'
+    tmpfs:
+      - /tmp:size=100m,noexec,nosuid
+    env_file:
+      - .env
+    environment:
+      - SERVER_URL=https://pipeline.cheminfo.org
+      - INSTANCES=4

@@ -1,8 +1,8 @@
 """
-Ab initio geometry optimization worker.
+xtb IR spectroscopy worker.
 
-Receives a 3D molfile with energy, optimizes the geometry using xtb (GFN2-xTB),
-and returns the optimized molfile with the final energy.
+Receives an optimized 3D molfile, computes vibrational frequencies and IR
+intensities using xtb (--hess), and returns the spectrum data.
 
 Requirements:
     pip install sseclient-py requests
@@ -30,9 +30,7 @@ import tempfile
 for thread_var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
     os.environ.setdefault(thread_var, "1")
 
-WORKER_NAME = "abinitioOptimization"
-
-# --- Molfile / XYZ conversion ---
+WORKER_NAME = "xtbIr"
 
 # Regex for a V2000 atom line: x y z symbol ...
 ATOM_RE = re.compile(
@@ -50,7 +48,6 @@ def molfile_to_xyz(molfile):
         XYZ file content as a string.
     """
     lines = molfile.split("\n")
-    # Line 4 (index 3) is the counts line: "aaabbb..." where aaa = num atoms
     counts_line = lines[3].strip()
     num_atoms = int(counts_line[:3])
 
@@ -66,47 +63,57 @@ def molfile_to_xyz(molfile):
     return "\n".join(xyz_lines) + "\n"
 
 
-def update_molfile_coordinates(molfile, xyz_path):
-    """Update a V2000 molfile with optimized coordinates from an XYZ file.
+def parse_vibspectrum(work_dir):
+    """Parse the vibspectrum file produced by xtb --hess.
+
+    The vibspectrum file has a header section (lines starting with '$' or '#')
+    followed by data lines with columns:
+        index  frequency(cm-1)  symmetry  intensity(km/mol)
 
     Args:
-        molfile: Original V2000 molfile string.
-        xyz_path: Path to the optimized XYZ file from xtb.
+        work_dir: Directory where xtb was run.
 
     Returns:
-        Updated molfile string with new coordinates.
+        List of dicts with 'frequency' and 'intensity' for each mode.
     """
-    with open(xyz_path) as f:
-        xyz_lines = f.readlines()
+    vibspectrum_path = os.path.join(work_dir, "vibspectrum")
+    if not os.path.exists(vibspectrum_path):
+        raise RuntimeError("xtb did not produce vibspectrum file")
 
-    mol_lines = molfile.split("\n")
-    counts_line = mol_lines[3].strip()
-    num_atoms = int(counts_line[:3])
+    modes = []
+    with open(vibspectrum_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("$") or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            try:
+                frequency = float(parts[1])
+                intensity = float(parts[3])
+                modes.append({"frequency": frequency, "intensity": intensity})
+            except (ValueError, IndexError):
+                continue
 
-    for i in range(num_atoms):
-        parts = xyz_lines[i + 2].split()
-        x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
-        # V2000 atom line: positions 0-9 (x), 10-19 (y), 20-29 (z), 31-33 (symbol), rest
-        old_line = mol_lines[4 + i]
-        symbol_and_rest = old_line[31:]
-        mol_lines[4 + i] = f"{x:10.4f}{y:10.4f}{z:10.4f} {symbol_and_rest}"
+    if not modes:
+        raise RuntimeError("No vibrational modes found in vibspectrum file")
 
-    return "\n".join(mol_lines)
+    return modes
 
 
 def parse_xtb_energy(work_dir, stdout=""):
     """Parse the final energy from xtb output.
 
-    Tries multiple sources in order: energy file, xtbopt.log, stdout.
+    Tries multiple sources in order: energy file, stdout.
 
     Args:
         work_dir: Directory where xtb was run.
         stdout: Captured stdout from the xtb process.
 
     Returns:
-        Energy in Hartree as a float.
+        Energy in Hartree as a float, or None if not found.
     """
-    # 1. Parse from the xtb energy file (most reliable)
     energy_path = os.path.join(work_dir, "energy")
     if os.path.exists(energy_path):
         with open(energy_path) as f:
@@ -118,34 +125,30 @@ def parse_xtb_energy(work_dir, stdout=""):
                     except ValueError:
                         continue
 
-    # 2. Fallback: parse from xtbopt.log
-    log_path = os.path.join(work_dir, "xtbopt.log")
-    if os.path.exists(log_path):
-        with open(log_path) as f:
-            energy = _parse_energy_from_text(f)
-            if energy is not None:
-                return energy
-
-    # 3. Fallback: parse from stdout
     if stdout:
-        energy = _parse_energy_from_text(stdout.splitlines())
-        if energy is not None:
-            return energy
+        for line in stdout.splitlines():
+            if "total energy" in line.lower():
+                parts = line.split()
+                for j, part in enumerate(parts):
+                    if part == "Eh" and j > 0:
+                        try:
+                            return float(parts[j - 1])
+                        except (ValueError, IndexError):
+                            continue
+    return None
 
-    raise ValueError("Could not parse energy from xtb output")
 
-
-def _parse_energy_from_text(lines):
-    """Extract 'total energy' value from xtb text output.
+def parse_zero_point_energy(stdout):
+    """Parse the zero-point energy from xtb stdout.
 
     Args:
-        lines: Iterable of text lines.
+        stdout: Captured stdout from the xtb process.
 
     Returns:
-        Energy as float, or None if not found.
+        Zero-point energy in Hartree as a float, or None if not found.
     """
-    for line in lines:
-        if "total energy" in line.lower():
+    for line in stdout.splitlines():
+        if "zero point energy" in line.lower():
             parts = line.split()
             for j, part in enumerate(parts):
                 if part == "Eh" and j > 0:
@@ -159,52 +162,50 @@ def _parse_energy_from_text(lines):
 # --- Worker processing function ---
 
 
-def optimize_geometry(data, parameters=None):
-    """Run xtb geometry optimization on a 3D molfile.
+def compute_ir(data, parameters=None):
+    """Run xtb Hessian calculation to obtain IR spectrum from an optimized molfile.
 
     This is the processing function passed to :class:`WorkerClient`.
 
     Args:
-        data: Task input dict containing ``molfile`` (a V2000/V3000 string).
+        data: Task input dict containing ``molfile`` (an optimized V2000 string).
         parameters: Optional dict with xtb parameters:
             - method: GFN method (default: "GFN2-xTB")
-            - optimizationLevel: Optimization level (default: "normal")
             - charge: Molecular charge (default: 0)
             - multiplicity: Spin multiplicity (default: 1)
-            - maxIterations: Max optimization steps (default: 200)
             - solvent: Solvent for ALPB model (e.g., "water", "methanol")
 
     Returns:
-        Dict with "molfile" (optimized) and "energy" (in Hartree).
+        Dict with:
+            - "modes": list of {frequency, intensity} for each vibrational mode
+            - "energy": total energy in Hartree (if available)
+            - "zeroPointEnergy": zero-point energy in Hartree (if available)
     """
     molfile = data["molfile"]
     if parameters is None:
         parameters = {}
 
     method = parameters.get("method", "GFN2-xTB")
-    optimization_level = parameters.get("optimizationLevel", "normal")
     charge = parameters.get("charge", 0)
     multiplicity = parameters.get("multiplicity", 1)
-    max_iterations = parameters.get("maxIterations", 200)
     solvent = parameters.get("solvent")
 
     print(
         f"[{WORKER_NAME}] Parameters: method={method}, "
-        f"opt={optimization_level}, charge={charge}, "
-        f"multiplicity={multiplicity}, maxIter={max_iterations}"
+        f"charge={charge}, multiplicity={multiplicity}"
         + (f", solvent={solvent}" if solvent else "")
     )
 
     xyz_content = molfile_to_xyz(molfile)
 
-    work_dir = tempfile.mkdtemp(prefix="xtb_")
+    work_dir = tempfile.mkdtemp(prefix="xtb_ir_")
     try:
         input_xyz = os.path.join(work_dir, "input.xyz")
         with open(input_xyz, "w") as f:
             f.write(xyz_content)
 
-        # Build xtb command
-        cmd = ["xtb", "input.xyz", "--opt", optimization_level]
+        # Build xtb command for Hessian calculation (produces vibspectrum)
+        cmd = ["xtb", "input.xyz", "--hess"]
 
         # Method flag
         method_lower = method.lower()
@@ -221,7 +222,6 @@ def optimize_geometry(data, parameters=None):
         uhf = multiplicity - 1
         if uhf > 0:
             cmd.extend(["--uhf", str(uhf)])
-        cmd.extend(["--iterations", str(max_iterations)])
 
         if solvent:
             cmd.extend(["--alpb", solvent])
@@ -234,7 +234,7 @@ def optimize_geometry(data, parameters=None):
             cwd=work_dir,
             capture_output=True,
             text=True,
-            timeout=500,
+            timeout=600,
         )
 
         if result.returncode != 0:
@@ -242,15 +242,17 @@ def optimize_geometry(data, parameters=None):
                 f"xtb failed (exit {result.returncode}): {result.stderr[-500:]}"
             )
 
-        # Read optimized coordinates
-        opt_xyz = os.path.join(work_dir, "xtbopt.xyz")
-        if not os.path.exists(opt_xyz):
-            raise RuntimeError("xtb did not produce optimized geometry")
-
-        optimized_molfile = update_molfile_coordinates(molfile, opt_xyz)
+        modes = parse_vibspectrum(work_dir)
         energy = parse_xtb_energy(work_dir, result.stdout)
+        zero_point_energy = parse_zero_point_energy(result.stdout)
 
-        return {"molfile": optimized_molfile, "energy": energy}
+        output = {"modes": modes}
+        if energy is not None:
+            output["energy"] = energy
+        if zero_point_energy is not None:
+            output["zeroPointEnergy"] = zero_point_energy
+
+        return output
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -258,5 +260,5 @@ def optimize_geometry(data, parameters=None):
 if __name__ == "__main__":
     from pipeline_worker import WorkerClient
 
-    client = WorkerClient(WORKER_NAME, optimize_geometry)
+    client = WorkerClient(WORKER_NAME, compute_ir)
     client.run()

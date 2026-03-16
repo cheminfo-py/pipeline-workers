@@ -1,20 +1,19 @@
-# Force amd64 platform — xtb's ARM64 build has numerical bugs that cause
-# GFN2-xTB geometry optimizations to diverge.
+# RDKit is easiest to install via conda
 FROM --platform=linux/amd64 condaforge/miniforge3:latest
 
-# Install xtb via conda, then pip dependencies
-RUN conda install -y -c conda-forge xtb && \
+# Install rdkit via conda, then pip dependencies
+RUN conda install -y -c conda-forge rdkit && \
     conda clean -afy
 
 WORKDIR /app
 
-COPY abinitio-optimization/requirements.txt .
+COPY conformer-generation/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the shared pipeline_worker package
 COPY pipeline_worker /app/pipeline_worker
 
-COPY abinitio-optimization/worker.py .
+COPY conformer-generation/worker.py .
 
 # Disable Python stdout buffering so logs appear immediately in Docker
 ENV PYTHONUNBUFFERED=1

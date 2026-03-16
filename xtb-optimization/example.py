@@ -1,5 +1,5 @@
 """
-Run the abinitio optimization locally on a sample molfile.
+Run the xtb optimization locally on a sample molfile.
 
 This script demonstrates how to use the optimize_geometry function
 without connecting to the Pipeline server. Useful for development
@@ -10,7 +10,7 @@ Requirements:
     Install via conda: conda install -c conda-forge xtb
 
 Usage:
-    cd workers-python/abinitio-optimization
+    cd xtb-optimization
     python example.py
     python example.py input.mol          # optimize a specific molfile
     python example.py input.mol -o out   # write output to out.mol and out.json

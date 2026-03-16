@@ -9,13 +9,41 @@ pipeline-workers/
 ├── pipeline_worker/         # Shared infrastructure package
 │   ├── __init__.py
 │   └── client.py            # WorkerClient class
-├── abinitio-optimization/   # xtb geometry optimization worker
+├── xtb-optimization/   # xtb geometry optimization worker
 │   ├── worker.py            # Processing logic + entry point
 │   ├── example.py           # Standalone local test script
 │   ├── Dockerfile
 │   └── requirements.txt
+├── xtb-ir/             # xtb IR spectroscopy worker
+│   ├── worker.py
+│   ├── example.py
+│   ├── Dockerfile
+│   └── requirements.txt
+├── conformer-generation/    # RDKit conformer generation worker
+│   ├── worker.py
+│   ├── example.py
+│   ├── Dockerfile
+│   └── requirements.txt
 └── README.md
 ```
+
+## IR prediction pipeline
+
+The workers can be chained together in the Pipeline server to build an IR prediction workflow:
+
+```
+molfile ──> conformerGeneration ──> xtbOptimization ──> xtbIr ──> IR spectrum
+              │                        │                       │
+              ▼                        ▼                       ▼
+         conformers[]            optimized molfile      frequencies + intensities
+         + energies              + energy               + zero-point energy
+```
+
+| Step | Worker | Input | Output |
+| ---- | ------ | ----- | ------ |
+| 1 | `conformerGeneration` | molfile | conformers[] (molfile + energy each) |
+| 2 | `xtbOptimization` | molfile | optimized molfile + energy |
+| 3 | `xtbIr` | optimized molfile | vibrational modes (frequency + IR intensity) |
 
 ## Creating a new worker
 
@@ -78,7 +106,7 @@ result = process(sample_input, parameters=None)
 print(json.dumps(result, indent=2))
 ```
 
-See [abinitio-optimization/example.py](abinitio-optimization/example.py) for a full example with argument parsing and file I/O.
+See [xtb-optimization/example.py](xtb-optimization/example.py) for a full example with argument parsing and file I/O.
 
 ### 4. Add requirements.txt
 
@@ -137,7 +165,7 @@ The worker must be registered in the database with its name, input schema, and o
 
 Some workers require external tools. Install them before running locally.
 
-### xtb (required by `abinitio-optimization`)
+### xtb (required by `xtb-optimization` and `xtb-ir`)
 
 [xtb](https://github.com/grimme-lab/xtb) is a semi-empirical quantum chemistry program used for geometry optimization. Install it via conda-forge:
 
@@ -164,22 +192,39 @@ xtb --version
 
 > **Note:** Make sure `xtb` is in your PATH. If you installed it in a conda environment, activate that environment before running the worker.
 
+### RDKit (required by `conformer-generation`)
+
+[RDKit](https://www.rdkit.org/) is a cheminformatics toolkit used for conformer generation. Install via conda-forge:
+
+```bash
+mamba install -c conda-forge rdkit
+
+# Or using conda
+conda install -c conda-forge rdkit
+```
+
+Verify the installation:
+
+```bash
+python -c "from rdkit import Chem; print(Chem.MolFromSmiles('CCO').GetNumAtoms())"
+```
+
 ## Running locally
 
 ### Development mode (connected to server)
 
 ```bash
-SERVER_URL=http://localhost:3000 TOKEN=your-token python abinitio-optimization/worker.py
+SERVER_URL=http://localhost:3000 TOKEN=your-token python xtb-optimization/worker.py
 ```
 
 ### Standalone test (no server needed)
 
 Each worker can include an `example.py` script that runs the processing function locally without connecting to the Pipeline server. This is useful for verifying that external tools are installed and working correctly.
 
-#### abinitio-optimization
+#### xtb-optimization
 
 ```bash
-cd abinitio-optimization
+cd xtb-optimization
 python example.py                        # uses built-in ethanol molfile
 python example.py input.mol              # optimize a specific molfile
 python example.py input.mol -o output    # writes output.mol and output.json
@@ -193,9 +238,30 @@ Input: built-in ethanol molfile
 Method: GFN2-xTB
 Optimization level: normal
 Running optimization...
-[abinitioOptimization] Parameters: method=GFN2-xTB, opt=normal, charge=0, multiplicity=1, maxIter=200
+[xtbOptimization] Parameters: method=GFN2-xTB, opt=normal, charge=0, multiplicity=1, maxIter=200
 Energy: -11.2111622673 Eh
 { "molfile": "...", "energy": -11.211162267257 }
+```
+
+#### xtb-ir
+
+```bash
+cd xtb-ir
+python example.py                        # uses built-in ethanol molfile
+python example.py input.mol              # compute IR for a specific molfile
+python example.py input.mol -o output    # writes output.json
+python example.py --method GFN-FF        # use a faster force-field method
+```
+
+#### conformer-generation
+
+```bash
+cd conformer-generation
+python example.py                              # uses built-in ethanol molfile
+python example.py input.mol                    # generate conformers for a specific molfile
+python example.py input.mol -o output          # writes output.json
+python example.py --max-conformers 20          # generate more conformers
+python example.py --force-field UFF            # use UFF instead of MMFF94
 ```
 
 ## WorkerClient API
