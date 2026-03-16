@@ -9,7 +9,7 @@ Requirements:
     xtb must be installed and available in PATH.
 
 Environment variables:
-    SERVER_URL  - Pipeline server URL (default: http://localhost:3000)
+    SERVER_URL  - Pipeline server URL (default: http://localhost:5172)
     TOKEN       - Authentication token for the pipeline server
     INSTANCES   - Number of worker instances to run (default: 1)
 

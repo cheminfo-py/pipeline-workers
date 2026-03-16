@@ -80,7 +80,7 @@ class WorkerClient:
             *parameters* is an optional dict of worker parameters (may be
             ``None``). The return value is sent back as the task result.
         server_url: Pipeline server URL. Defaults to ``SERVER_URL`` env var
-            or ``http://localhost:3000``.
+            or ``http://localhost:5172``.
         token: Authentication token. Defaults to ``TOKEN`` env var or the
             default dev token.
     """
@@ -89,7 +89,7 @@ class WorkerClient:
         self.worker_name = worker_name
         self.process_fn = process_fn
         self.server_url = server_url or os.environ.get(
-            "SERVER_URL", "http://localhost:3000"
+            "SERVER_URL", "http://localhost:5172"
         )
         self.token = token or os.environ.get(
             "TOKEN", "f47ac10b-58cc-4372-a567-0e02b2c3d479"

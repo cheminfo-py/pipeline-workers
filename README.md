@@ -214,7 +214,7 @@ python -c "from rdkit import Chem; print(Chem.MolFromSmiles('CCO').GetNumAtoms()
 ### Development mode (connected to server)
 
 ```bash
-SERVER_URL=http://localhost:3000 TOKEN=your-token python xtb-optimization/worker.py
+SERVER_URL=http://localhost:5172 TOKEN=your-token python xtb-optimization/worker.py
 ```
 
 ### Standalone test (no server needed)
@@ -282,7 +282,7 @@ client.run()                    # Starts listening (blocks forever)
 
 | Variable     | Description                         | Default                                |
 | ------------ | ----------------------------------- | -------------------------------------- |
-| `SERVER_URL` | Pipeline server URL                 | `http://localhost:3000`                |
+| `SERVER_URL` | Pipeline server URL                 | `http://localhost:5172`                |
 | `TOKEN`      | Authentication token                | `f47ac10b-58cc-4372-a567-0e02b2c3d479` |
 | `INSTANCES`  | Number of concurrent worker threads | `1`                                    |
 

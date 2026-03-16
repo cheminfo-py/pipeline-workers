@@ -10,7 +10,7 @@ Requirements:
     (rdkit can also be installed via conda: conda install -c conda-forge rdkit)
 
 Environment variables:
-    SERVER_URL  - Pipeline server URL (default: http://localhost:3000)
+    SERVER_URL  - Pipeline server URL (default: http://localhost:5172)
     TOKEN       - Authentication token for the pipeline server
     INSTANCES   - Number of worker instances to run (default: 1)
 
