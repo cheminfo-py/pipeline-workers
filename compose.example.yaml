@@ -27,10 +27,10 @@ services:
     env_file:
       - .env
 
-  xtb-ir-worker:
+  xtb-vibrational-worker:
     build:
       context: .
-      dockerfile: xtb-ir/Dockerfile
+      dockerfile: xtb-vibrational/Dockerfile
     restart: unless-stopped
     stop_grace_period: 3s
     read_only: true
@@ -42,8 +42,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${XTB_IR_MEMORY:-4G}
-          cpus: '${XTB_IR_CPUS:-8}'
+          memory: ${XTB_VIB_MEMORY:-4G}
+          cpus: '${XTB_VIB_CPUS:-8}'
           pids: 256
     logging:
       driver: json-file

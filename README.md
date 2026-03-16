@@ -14,7 +14,7 @@ pipeline-workers/
 │   ├── example.py           # Standalone local test script
 │   ├── Dockerfile
 │   └── requirements.txt
-├── xtb-ir/             # xtb IR spectroscopy worker
+├── xtb-vibrational/             # xtb IR spectroscopy worker
 │   ├── worker.py
 │   ├── example.py
 │   ├── Dockerfile
@@ -32,7 +32,7 @@ pipeline-workers/
 The workers can be chained together in the Pipeline server to build an IR prediction workflow:
 
 ```
-molfile ──> rdkitConformers ──> xtbOptimization ──> xtbIr ──> IR spectrum
+molfile ──> rdkitConformers ──> xtbOptimization ──> xtbVibrational ──> IR spectrum
               │                        │                       │
               ▼                        ▼                       ▼
          conformers[]            optimized molfile      frequencies + intensities
@@ -43,7 +43,7 @@ molfile ──> rdkitConformers ──> xtbOptimization ──> xtbIr ──> IR
 | ---- | ------ | ----- | ------ |
 | 1 | `rdkitConformers` | molfile | conformers[] (molfile + energy each) |
 | 2 | `xtbOptimization` | molfile | optimized molfile + energy |
-| 3 | `xtbIr` | optimized molfile | vibrational modes (frequency + IR intensity) |
+| 3 | `xtbVibrational` | optimized molfile | IR + Raman spectra, modes, moments of inertia |
 
 ## Creating a new worker
 
@@ -165,7 +165,7 @@ The worker must be registered in the database with its name, input schema, and o
 
 Some workers require external tools. Install them before running locally.
 
-### xtb (required by `xtb-optimization` and `xtb-ir`)
+### xtb (required by `xtb-optimization` and `xtb-vibrational`)
 
 [xtb](https://github.com/grimme-lab/xtb) is a semi-empirical quantum chemistry program used for geometry optimization. Install it via conda-forge:
 
@@ -243,10 +243,10 @@ Energy: -11.2111622673 Eh
 { "molfile": "...", "energy": -11.211162267257 }
 ```
 
-#### xtb-ir
+#### xtb-vibrational
 
 ```bash
-cd xtb-ir
+cd xtb-vibrational
 python example.py                        # uses built-in ethanol molfile
 python example.py input.mol              # compute IR for a specific molfile
 python example.py input.mol -o output    # writes output.json
