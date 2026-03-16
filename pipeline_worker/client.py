@@ -5,6 +5,7 @@ communication with the Pipeline server so that individual workers only need
 to implement a processing function.
 """
 
+import io
 import json
 import os
 import signal
@@ -19,6 +20,23 @@ import sseclient
 
 HEARTBEAT_INTERVAL = 30
 MAX_RESULT_RETRIES = 3
+MAX_LOG_SIZE = 1_048_576
+
+
+class _TeeStream:
+    """Write to both the original stream and a capture buffer."""
+
+    def __init__(self, original, buffer):
+        self.original = original
+        self.buffer = buffer
+
+    def write(self, text):
+        self.original.write(text)
+        self.buffer.write(text)
+
+    def flush(self):
+        self.original.flush()
+        self.buffer.flush()
 
 
 def _get_system_info(runner_id):
@@ -158,6 +176,13 @@ class WorkerClient:
                             task_id, runner_id
                         )
 
+                        # Capture stdout/stderr during task processing
+                        log_buffer = io.StringIO()
+                        old_stdout = sys.stdout
+                        old_stderr = sys.stderr
+                        sys.stdout = _TeeStream(old_stdout, log_buffer)
+                        sys.stderr = _TeeStream(old_stderr, log_buffer)
+
                         start = time.time()
                         try:
                             result = self.process_fn(data, parameters)
@@ -170,8 +195,10 @@ class WorkerClient:
                                     / self._stats["completedTasks"]
                                 )
                                 current_stats = dict(self._stats)
+                            logs = log_buffer.getvalue()[:MAX_LOG_SIZE] or None
                             self._post_result(
-                                task_id, result, runner_id, current_stats
+                                task_id, result, runner_id, current_stats,
+                                logs
                             )
                             print(
                                 f"[{self.worker_name}] Task {task_id} "
@@ -181,14 +208,18 @@ class WorkerClient:
                             with self._stats_lock:
                                 self._stats["failedTasks"] += 1
                                 current_stats = dict(self._stats)
+                            logs = log_buffer.getvalue()[:MAX_LOG_SIZE] or None
                             self._post_error(
-                                task_id, str(error), runner_id, current_stats
+                                task_id, str(error), runner_id, current_stats,
+                                logs
                             )
                             print(
                                 f"[{self.worker_name}] Task {task_id} "
                                 f"failed: {error}"
                             )
                         finally:
+                            sys.stdout = old_stdout
+                            sys.stderr = old_stderr
                             stop_heartbeat.set()
 
                         # Reconnect after each task
@@ -244,7 +275,7 @@ class WorkerClient:
         thread.start()
         return stop_event
 
-    def _post_result(self, task_id, result, runner_id, runner_stats):
+    def _post_result(self, task_id, result, runner_id, runner_stats, logs=None):
         """Post a successful result back to the server with retries.
 
         Args:
@@ -252,6 +283,7 @@ class WorkerClient:
             result: Task result payload.
             runner_id: Runner UUID for this instance.
             runner_stats: Runner statistics dict.
+            logs: Optional captured log output string.
         """
         url = f"{self.server_url}/v1/worker/{self.worker_name}/result"
         payload = {
@@ -260,9 +292,12 @@ class WorkerClient:
             "runnerId": runner_id,
             "runnerStats": runner_stats,
         }
+        if logs:
+            payload["logs"] = logs
         self._post_with_retries(url, payload, "result", task_id)
 
-    def _post_error(self, task_id, error_message, runner_id, runner_stats):
+    def _post_error(self, task_id, error_message, runner_id, runner_stats,
+                    logs=None):
         """Post an error back to the server with retries.
 
         Args:
@@ -270,6 +305,7 @@ class WorkerClient:
             error_message: Error description.
             runner_id: Runner UUID for this instance.
             runner_stats: Runner statistics dict.
+            logs: Optional captured log output string.
         """
         url = f"{self.server_url}/v1/worker/{self.worker_name}/result"
         payload = {
@@ -278,6 +314,8 @@ class WorkerClient:
             "runnerId": runner_id,
             "runnerStats": runner_stats,
         }
+        if logs:
+            payload["logs"] = logs
         self._post_with_retries(url, payload, "error", task_id)
 
     def _post_with_retries(self, url, payload, label, task_id):

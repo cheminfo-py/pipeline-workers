@@ -39,7 +39,7 @@ def generate_conformers(data, parameters=None):
             - poolMultiplier: Multiplier for initial conformer pool size (default: 10)
 
     Returns:
-        Dict with "conformers": list of {molfile, energy} sorted by energy.
+        List of {molfile, energy} dicts sorted by energy.
     """
     molfile = data["molfile"]
     if parameters is None:
@@ -124,7 +124,7 @@ def generate_conformers(data, parameters=None):
             "energy": energies[conf_id],
         })
 
-    return {"conformers": conformers}
+    return conformers
 
 
 def _prune_by_rmsd(mol, sorted_ids, threshold):
