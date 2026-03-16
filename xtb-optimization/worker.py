@@ -20,6 +20,8 @@ Usage:
 
 import os
 import re
+import shutil
+import tempfile
 from copy import deepcopy
 
 from ase import Atoms
@@ -125,13 +127,22 @@ def optimize_geometry(data, parameters=None):
     mol.pbc = False
     mol.calc = XTB(method=method)
 
-    opt = LBFGS(mol, logfile=None)
-    opt.run(fmax=fmax, steps=max_iterations)
+    # Work in a temp directory for xtb restart/scratch files
+    original_dir = os.getcwd()
+    work_dir = tempfile.mkdtemp(prefix="xtb_opt_")
+    try:
+        os.chdir(work_dir)
 
-    energy = float(mol.get_potential_energy())
-    optimized_molfile = update_molfile_coordinates(molfile, mol.positions)
+        opt = LBFGS(mol, logfile=None)
+        opt.run(fmax=fmax, steps=max_iterations)
 
-    return {"molfile": optimized_molfile, "energy": energy}
+        energy = float(mol.get_potential_energy())
+        optimized_molfile = update_molfile_coordinates(molfile, mol.positions)
+
+        return {"molfile": optimized_molfile, "energy": energy}
+    finally:
+        os.chdir(original_dir)
+        shutil.rmtree(work_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
