@@ -1,0 +1,29 @@
+services:
+  abinitio-worker:
+    build:
+      context: .
+      dockerfile: abinitio-optimization/Dockerfile
+    stop_grace_period: 3s
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '8'
+          pids: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 200m
+        max-file: '3'
+    tmpfs:
+      - /tmp:size=500m
+    env_file:
+      - .env
+    environment:
+      - SERVER_URL=https://pipeline.cheminfo.org
+      - INSTANCES=8
