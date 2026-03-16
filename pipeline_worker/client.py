@@ -21,6 +21,10 @@ import sseclient
 HEARTBEAT_INTERVAL = 30
 MAX_RESULT_RETRIES = 3
 MAX_LOG_SIZE = 1_048_576
+# SSE read timeout — if no data (including keepalive pings) arrives within
+# this many seconds, the connection is considered dead and will be retried.
+# Must be longer than the server's SSE keepalive interval.
+SSE_READ_TIMEOUT = 60
 
 
 _thread_local = threading.local()
@@ -176,7 +180,8 @@ class WorkerClient:
                 url = f"{self.server_url}/v1/worker/listen/{self.worker_name}"
                 print(f"[{self.worker_name}] Connecting to {url} ...")
                 response = requests.get(
-                    url, params=params, stream=True, timeout=None
+                    url, params=params, stream=True,
+                    timeout=(10, SSE_READ_TIMEOUT),
                 )
                 response.raise_for_status()
                 client = sseclient.SSEClient(response)
