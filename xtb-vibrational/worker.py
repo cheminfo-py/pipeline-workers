@@ -457,7 +457,7 @@ def compute_vibrational(data, parameters=None):
 
         zpe = float(ir.get_zero_point_energy())
         moi = atoms.get_moments_of_inertia()
-        linear = sum(moi > 0.01) == 2
+        linear = bool(sum(moi > 0.01) == 2)
 
         bonds = get_bonds_from_mol(mol)
 
