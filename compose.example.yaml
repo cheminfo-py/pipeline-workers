@@ -14,8 +14,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
-          cpus: '8'
+          memory: ${XTB_OPT_MEMORY:-4G}
+          cpus: '${XTB_OPT_CPUS:-8}'
           pids: 256
     logging:
       driver: json-file
@@ -26,9 +26,6 @@ services:
       - /tmp:size=500m,noexec,nosuid
     env_file:
       - .env
-    environment:
-      - SERVER_URL=https://pipeline.cheminfo.org
-      - INSTANCES=8
 
   xtb-ir-worker:
     build:
@@ -45,8 +42,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
-          cpus: '8'
+          memory: ${XTB_IR_MEMORY:-4G}
+          cpus: '${XTB_IR_CPUS:-8}'
           pids: 256
     logging:
       driver: json-file
@@ -57,9 +54,6 @@ services:
       - /tmp:size=500m,noexec,nosuid
     env_file:
       - .env
-    environment:
-      - SERVER_URL=https://pipeline.cheminfo.org
-      - INSTANCES=8
 
   rdkit-conformers-worker:
     build:
@@ -76,8 +70,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
-          cpus: '4'
+          memory: ${RDKIT_CONFORMERS_MEMORY:-2G}
+          cpus: '${RDKIT_CONFORMERS_CPUS:-4}'
           pids: 256
     logging:
       driver: json-file
@@ -88,6 +82,3 @@ services:
       - /tmp:size=100m,noexec,nosuid
     env_file:
       - .env
-    environment:
-      - SERVER_URL=https://pipeline.cheminfo.org
-      - INSTANCES=4
