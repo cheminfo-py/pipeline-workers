@@ -17,6 +17,6 @@ Usage::
         client.run()
 """
 
-from pipeline_worker.client import WorkerClient
+from pipeline_worker.client import WorkerClient, log
 
-__all__ = ["WorkerClient"]
+__all__ = ["WorkerClient", "log"]

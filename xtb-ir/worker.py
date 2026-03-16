@@ -21,7 +21,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 
 # Force single-threaded math libraries so each worker instance uses exactly
@@ -261,11 +260,10 @@ def compute_ir(data, parameters=None):
             timeout=600,
         )
 
-        # Log subprocess output for debugging
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(result.stderr, file=sys.stderr)
+        # Send subprocess output to the server log (not Docker logs)
+        from pipeline_worker import log
+        log(result.stdout)
+        log(result.stderr)
 
         if result.returncode != 0:
             raise RuntimeError(

@@ -26,6 +26,20 @@ MAX_LOG_SIZE = 1_048_576
 _thread_local = threading.local()
 
 
+def log(text):
+    """Write text to the task log buffer without printing to stdout.
+
+    Use this for verbose output (e.g. subprocess stdout/stderr) that should
+    be sent to the server but not clutter Docker logs.
+
+    Args:
+        text: Text to append to the log buffer.
+    """
+    buf = getattr(_thread_local, "log_buffer", None)
+    if buf is not None and text:
+        buf.write(text)
+
+
 class _TeeStream:
     """Write to the original stream and the current thread's log buffer.
 
