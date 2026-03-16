@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 
 # Force single-threaded math libraries so each worker instance uses exactly
@@ -67,14 +68,26 @@ def parse_vibspectrum(work_dir):
     """Parse the vibspectrum file produced by xtb --hess.
 
     The vibspectrum file has a header section (lines starting with '$' or '#')
-    followed by data lines with columns:
-        index  frequency(cm-1)  symmetry  intensity(km/mol)
+    followed by data lines in one of two formats:
+
+    With symmetry label (vibrational modes)::
+
+        7        a            326.63         0.00000         NO
+
+    Without symmetry label (translational/rotational modes)::
+
+        1                      -0.00         0.00000          -
+
+    The frequency and intensity columns shift depending on whether a
+    symmetry label is present. We detect this by checking if the second
+    field is numeric.
 
     Args:
         work_dir: Directory where xtb was run.
 
     Returns:
-        List of dicts with 'frequency' and 'intensity' for each mode.
+        List of dicts with 'frequency' and 'intensity' for each mode,
+        excluding translational/rotational modes (frequency ~ 0).
     """
     vibspectrum_path = os.path.join(work_dir, "vibspectrum")
     if not os.path.exists(vibspectrum_path):
@@ -87,11 +100,22 @@ def parse_vibspectrum(work_dir):
             if not line or line.startswith("$") or line.startswith("#"):
                 continue
             parts = line.split()
-            if len(parts) < 4:
+            if len(parts) < 3:
                 continue
             try:
-                frequency = float(parts[1])
-                intensity = float(parts[3])
+                # Detect whether a symmetry label is present by trying to
+                # parse parts[1] as a float.  If it works, there is no
+                # symmetry column; if it fails, skip over the label.
+                try:
+                    frequency = float(parts[1])
+                    intensity = float(parts[2])
+                except ValueError:
+                    # parts[1] is a symmetry label like "a"
+                    frequency = float(parts[2])
+                    intensity = float(parts[3])
+                # Skip translational/rotational modes (frequency ~ 0)
+                if abs(frequency) < 1.0:
+                    continue
                 modes.append({"frequency": frequency, "intensity": intensity})
             except (ValueError, IndexError):
                 continue
@@ -236,6 +260,12 @@ def compute_ir(data, parameters=None):
             text=True,
             timeout=600,
         )
+
+        # Log subprocess output for debugging
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
 
         if result.returncode != 0:
             raise RuntimeError(

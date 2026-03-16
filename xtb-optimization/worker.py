@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 
 # Force single-threaded math libraries so each worker instance uses exactly
@@ -236,6 +237,12 @@ def optimize_geometry(data, parameters=None):
             text=True,
             timeout=500,
         )
+
+        # Log subprocess output for debugging
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
 
         if result.returncode != 0:
             raise RuntimeError(
