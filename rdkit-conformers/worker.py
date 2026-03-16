@@ -21,7 +21,7 @@ Usage:
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdMolAlign
 
-WORKER_NAME = "conformerGeneration"
+WORKER_NAME = "rdkitConformers"
 
 
 def generate_conformers(data, parameters=None):

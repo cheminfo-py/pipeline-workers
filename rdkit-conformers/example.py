@@ -10,7 +10,7 @@ Requirements:
     Install via conda: conda install -c conda-forge rdkit
 
 Usage:
-    cd conformer-generation
+    cd rdkit-conformers
     python example.py
     python example.py input.mol                 # generate conformers for a specific molfile
     python example.py input.mol -o out          # write output to out.json

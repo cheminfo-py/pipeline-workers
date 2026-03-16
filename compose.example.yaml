@@ -61,10 +61,10 @@ services:
       - SERVER_URL=https://pipeline.cheminfo.org
       - INSTANCES=8
 
-  conformer-generation-worker:
+  rdkit-conformers-worker:
     build:
       context: .
-      dockerfile: conformer-generation/Dockerfile
+      dockerfile: rdkit-conformers/Dockerfile
     restart: unless-stopped
     stop_grace_period: 3s
     read_only: true

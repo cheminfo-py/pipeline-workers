@@ -19,7 +19,7 @@ pipeline-workers/
 │   ├── example.py
 │   ├── Dockerfile
 │   └── requirements.txt
-├── conformer-generation/    # RDKit conformer generation worker
+├── rdkit-conformers/    # RDKit conformer generation worker
 │   ├── worker.py
 │   ├── example.py
 │   ├── Dockerfile
@@ -32,7 +32,7 @@ pipeline-workers/
 The workers can be chained together in the Pipeline server to build an IR prediction workflow:
 
 ```
-molfile ──> conformerGeneration ──> xtbOptimization ──> xtbIr ──> IR spectrum
+molfile ──> rdkitConformers ──> xtbOptimization ──> xtbIr ──> IR spectrum
               │                        │                       │
               ▼                        ▼                       ▼
          conformers[]            optimized molfile      frequencies + intensities
@@ -41,7 +41,7 @@ molfile ──> conformerGeneration ──> xtbOptimization ──> xtbIr ──
 
 | Step | Worker | Input | Output |
 | ---- | ------ | ----- | ------ |
-| 1 | `conformerGeneration` | molfile | conformers[] (molfile + energy each) |
+| 1 | `rdkitConformers` | molfile | conformers[] (molfile + energy each) |
 | 2 | `xtbOptimization` | molfile | optimized molfile + energy |
 | 3 | `xtbIr` | optimized molfile | vibrational modes (frequency + IR intensity) |
 
@@ -192,7 +192,7 @@ xtb --version
 
 > **Note:** Make sure `xtb` is in your PATH. If you installed it in a conda environment, activate that environment before running the worker.
 
-### RDKit (required by `conformer-generation`)
+### RDKit (required by `rdkit-conformers`)
 
 [RDKit](https://www.rdkit.org/) is a cheminformatics toolkit used for conformer generation. Install via conda-forge:
 
@@ -253,10 +253,10 @@ python example.py input.mol -o output    # writes output.json
 python example.py --method GFN-FF        # use a faster force-field method
 ```
 
-#### conformer-generation
+#### rdkit-conformers
 
 ```bash
-cd conformer-generation
+cd rdkit-conformers
 python example.py                              # uses built-in ethanol molfile
 python example.py input.mol                    # generate conformers for a specific molfile
 python example.py input.mol -o output          # writes output.json
