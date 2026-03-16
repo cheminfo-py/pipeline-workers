@@ -3,8 +3,10 @@ services:
     build:
       context: .
       dockerfile: abinitio-optimization/Dockerfile
+    restart: unless-stopped
     stop_grace_period: 3s
     read_only: true
+    user: '65534:65534' # nobody/nogroup — run as non-root
     cap_drop:
       - ALL
     security_opt:
@@ -21,7 +23,7 @@ services:
         max-size: 200m
         max-file: '3'
     tmpfs:
-      - /tmp:size=500m
+      - /tmp:size=500m,noexec,nosuid
     env_file:
       - .env
     environment:
