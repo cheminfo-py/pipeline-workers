@@ -2,8 +2,8 @@
 # GFN2-xTB geometry optimizations to diverge.
 FROM --platform=linux/amd64 condaforge/miniforge3:latest
 
-# Install xtb via conda, then pip dependencies
-RUN conda install -y -c conda-forge xtb && \
+# Install xtb-python, ASE, and RDKit via conda
+RUN conda install -y -c conda-forge xtb-python ase rdkit && \
     conda clean -afy
 
 WORKDIR /app

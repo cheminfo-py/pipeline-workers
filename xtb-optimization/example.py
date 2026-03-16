@@ -6,8 +6,7 @@ without connecting to the Pipeline server. Useful for development
 and testing.
 
 Requirements:
-    xtb must be installed and available in PATH.
-    Install via conda: conda install -c conda-forge xtb
+    Install via conda: conda install -c conda-forge xtb-python ase rdkit
 
 Usage:
     cd xtb-optimization
@@ -18,7 +17,6 @@ Usage:
 
 import argparse
 import json
-import sys
 
 from worker import optimize_geometry
 
@@ -64,13 +62,8 @@ def main():
     )
     parser.add_argument(
         "--method",
-        default="GFN2-xTB",
-        help="GFN method (default: GFN2-xTB)",
-    )
-    parser.add_argument(
-        "--opt-level",
-        default="normal",
-        help="Optimization level: crude, sloppy, loose, lax, normal, tight, vtight (default: normal)",
+        default="GFNFF",
+        help="xtb method: GFNFF, GFN2xTB, GFN1xTB (default: GFNFF)",
     )
     arguments = parser.parse_args()
 
@@ -83,21 +76,15 @@ def main():
         molfile = SAMPLE_MOLFILE
         print("Input: built-in ethanol molfile")
 
-    # Build parameters
-    parameters = {
-        "method": arguments.method,
-        "optimizationLevel": arguments.opt_level,
-    }
+    parameters = {"method": arguments.method}
 
     print(f"Method: {parameters['method']}")
-    print(f"Optimization level: {parameters['optimizationLevel']}")
     print("Running optimization...")
 
-    # Run the same function used by the pipeline worker
     data = {"molfile": molfile}
     result = optimize_geometry(data, parameters)
 
-    print(f"Energy: {result['energy']:.10f} Eh")
+    print(f"Energy: {result['energy']:.10f} eV")
 
     # Write output files
     if arguments.output:
@@ -109,7 +96,6 @@ def main():
             json.dump(result, f, indent=2)
         print(f"Written: {mol_path}, {json_path}")
     else:
-        # Print the JSON result to stdout
         print(json.dumps(result, indent=2))
 
 

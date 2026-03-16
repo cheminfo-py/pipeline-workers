@@ -437,24 +437,23 @@ def compute_vibrational(data, parameters=None):
     try:
         os.chdir(work_dir)
 
-        # Compute Raman (StaticRamanCalculator + PlaczekStatic)
+        # Compute IR first (always works)
         raman_intensities = None
         raman_spectrum = None
-        cache_name = "vib"
+        ir = Infrared(atoms, name="ir")
+        ir.run()
+
+        # Compute Raman separately (may fail for some molecules/methods)
         try:
             rm = StaticRamanCalculator(
-                atoms, BondPolarizability, name=cache_name
+                atoms, BondPolarizability, name="raman"
             )
             rm.ir = True
             rm.run()
-            pz = PlaczekStatic(atoms, name=cache_name)
+            pz = PlaczekStatic(atoms, name="raman")
             raman_intensities = pz.get_absolute_intensities()
         except Exception as error:
             print(f"[{WORKER_NAME}] Raman calculation failed: {error}")
-
-        # Compute IR
-        ir = Infrared(atoms, name=cache_name)
-        ir.run()
 
         zpe = float(ir.get_zero_point_energy())
         moi = atoms.get_moments_of_inertia()
