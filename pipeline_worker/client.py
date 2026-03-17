@@ -259,9 +259,6 @@ class WorkerClient:
                             _thread_local.log_buffer = None
                             stop_heartbeat.set()
 
-                        # Reconnect after each task
-                        break
-
             except Exception as error:
                 if self._shutdown.is_set():
                     break
