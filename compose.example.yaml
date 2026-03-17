@@ -23,7 +23,7 @@ services:
         max-size: 200m
         max-file: '3'
     tmpfs:
-      - /tmp:size=500m,noexec,nosuid
+      - /tmp:size=500m,nosuid
     env_file:
       - .env
 
@@ -51,7 +51,7 @@ services:
         max-size: 200m
         max-file: '3'
     tmpfs:
-      - /tmp:size=500m,noexec,nosuid
+      - /tmp:size=500m,nosuid
     env_file:
       - .env
 
