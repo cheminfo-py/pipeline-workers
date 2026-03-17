@@ -133,10 +133,11 @@ def optimize_geometry(data, parameters=None):
     try:
         os.chdir(work_dir)
 
-        opt = LBFGS(mol, logfile=None)
-        opt.run(fmax=fmax, steps=max_iterations)
-
-        energy = float(mol.get_potential_energy())
+        from pipeline_worker.suppress_output import suppress_fortran_output
+        with suppress_fortran_output():
+            opt = LBFGS(mol, logfile=None)
+            opt.run(fmax=fmax, steps=max_iterations)
+            energy = float(mol.get_potential_energy())
         optimized_molfile = update_molfile_coordinates(molfile, mol.positions)
 
         return {"molfile": optimized_molfile, "energy": energy}
