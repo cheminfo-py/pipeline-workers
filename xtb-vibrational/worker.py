@@ -24,6 +24,7 @@ Usage:
 import os
 import shutil
 import tempfile
+import threading
 from math import log, pi, sqrt
 
 import numpy as np
@@ -42,6 +43,9 @@ for thread_var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")
     os.environ.setdefault(thread_var, "1")
 
 WORKER_NAME = "xtbVibrational"
+
+# Lock to serialize os.chdir() calls — chdir is process-wide, not thread-safe.
+_chdir_lock = threading.Lock()
 
 # Threshold for "large" imaginary frequency (cm-1)
 IMAGINARY_FREQ_THRESHOLD = 10
@@ -431,33 +435,36 @@ def compute_vibrational(data, parameters=None):
     atoms, mol = molfile_to_ase(molfile)
     atoms.calc = XTB(method=method)
 
-    # Work in a temp directory for ASE cache files
-    original_dir = os.getcwd()
+    # Work in a temp directory for ASE cache files.
+    # The lock serializes chdir — it is process-wide, not thread-safe.
     work_dir = tempfile.mkdtemp(prefix="xtb_vib_")
     try:
-        os.chdir(work_dir)
-
         from pipeline_worker.suppress_output import suppress_fortran_output
 
         raman_intensities = None
         raman_spectrum = None
 
-        with suppress_fortran_output():
-            # Compute IR first (always works)
-            ir = Infrared(atoms, name="ir")
-            ir.run()
-
-            # Compute Raman separately (may fail for some molecules/methods)
+        with _chdir_lock, suppress_fortran_output():
+            original_dir = os.getcwd()
+            os.chdir(work_dir)
             try:
-                rm = StaticRamanCalculator(
-                    atoms, BondPolarizability, name="raman"
-                )
-                rm.ir = True
-                rm.run()
-                pz = PlaczekStatic(atoms, name="raman")
-                raman_intensities = pz.get_absolute_intensities()
-            except Exception:
-                pass  # Raman fails for some molecules — IR result is still valid
+                # Compute IR first (always works)
+                ir = Infrared(atoms, name="ir")
+                ir.run()
+
+                # Compute Raman separately (may fail for some molecules/methods)
+                try:
+                    rm = StaticRamanCalculator(
+                        atoms, BondPolarizability, name="raman"
+                    )
+                    rm.ir = True
+                    rm.run()
+                    pz = PlaczekStatic(atoms, name="raman")
+                    raman_intensities = pz.get_absolute_intensities()
+                except Exception:
+                    pass  # Raman fails for some molecules — IR still valid
+            finally:
+                os.chdir(original_dir)
 
         zpe = float(ir.get_zero_point_energy())
         moi = atoms.get_moments_of_inertia()
@@ -533,7 +540,6 @@ def compute_vibrational(data, parameters=None):
 
         return result
     finally:
-        os.chdir(original_dir)
         shutil.rmtree(work_dir, ignore_errors=True)
 
 

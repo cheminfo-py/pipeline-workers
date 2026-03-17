@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 from copy import deepcopy
 
 from ase import Atoms
@@ -37,6 +38,10 @@ for thread_var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")
     os.environ.setdefault(thread_var, "1")
 
 WORKER_NAME = "xtbOptimization"
+
+# Lock to serialize os.chdir() calls — chdir is process-wide, not thread-safe.
+# Without this, concurrent INSTANCES clobber each other's working directory.
+_chdir_lock = threading.Lock()
 
 # Regex for a V2000 atom line: x y z symbol ...
 ATOM_RE = re.compile(
@@ -127,22 +132,24 @@ def optimize_geometry(data, parameters=None):
     mol.pbc = False
     mol.calc = XTB(method=method)
 
-    # Work in a temp directory for xtb restart/scratch files
-    original_dir = os.getcwd()
+    # Work in a temp directory for xtb restart/scratch files.
+    # The lock serializes chdir — it is process-wide, not thread-safe.
     work_dir = tempfile.mkdtemp(prefix="xtb_opt_")
     try:
-        os.chdir(work_dir)
-
         from pipeline_worker.suppress_output import suppress_fortran_output
-        with suppress_fortran_output():
-            opt = LBFGS(mol, logfile=None)
-            opt.run(fmax=fmax, steps=max_iterations)
-            energy = float(mol.get_potential_energy())
+        with _chdir_lock, suppress_fortran_output():
+            original_dir = os.getcwd()
+            os.chdir(work_dir)
+            try:
+                opt = LBFGS(mol, logfile=None)
+                opt.run(fmax=fmax, steps=max_iterations)
+                energy = float(mol.get_potential_energy())
+            finally:
+                os.chdir(original_dir)
         optimized_molfile = update_molfile_coordinates(molfile, mol.positions)
 
         return {"molfile": optimized_molfile, "energy": energy}
     finally:
-        os.chdir(original_dir)
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
