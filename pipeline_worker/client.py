@@ -25,6 +25,9 @@ MAX_LOG_SIZE = 1_048_576
 # this many seconds, the connection is considered dead and will be retried.
 # Must be longer than the server's SSE keepalive interval.
 SSE_READ_TIMEOUT = 60
+# Reconnection backoff parameters (in seconds)
+RECONNECT_BASE_DELAY = 1
+RECONNECT_MAX_DELAY = 30
 
 
 _thread_local = threading.local()
@@ -160,8 +163,22 @@ class WorkerClient:
                 thread = threading.Thread(target=self._listen, daemon=True)
                 thread.start()
                 threads.append(thread)
-            # Wait for shutdown signal instead of joining threads forever
-            self._shutdown.wait()
+            # Monitor threads and restart any that die unexpectedly
+            while not self._shutdown.is_set():
+                self._shutdown.wait(5)
+                if self._shutdown.is_set():
+                    break
+                for index, thread in enumerate(threads):
+                    if not thread.is_alive():
+                        print(
+                            f"[{self.worker_name}] Instance thread died, "
+                            f"restarting..."
+                        )
+                        thread = threading.Thread(
+                            target=self._listen, daemon=True
+                        )
+                        thread.start()
+                        threads[index] = thread
         else:
             self._listen()
 
@@ -173,6 +190,7 @@ class WorkerClient:
     def _listen(self):
         """Connect to the SSE endpoint and process tasks in a loop."""
         runner_id = str(uuid.uuid4())
+        consecutive_failures = 0
 
         while not self._shutdown.is_set():
             try:
@@ -189,6 +207,8 @@ class WorkerClient:
                 print(
                     f"[{self.worker_name}] Connected (runner {runner_id[:8]})"
                 )
+                # Reset backoff on successful connection
+                consecutive_failures = 0
 
                 for event in client.events():
                     if self._shutdown.is_set():
@@ -258,16 +278,30 @@ class WorkerClient:
                         finally:
                             _thread_local.log_buffer = None
                             stop_heartbeat.set()
+                else:
+                    # SSE stream ended without error (server closed
+                    # connection) — reconnect immediately
+                    if not self._shutdown.is_set():
+                        print(
+                            f"[{self.worker_name}] SSE stream ended, "
+                            f"reconnecting..."
+                        )
+                    continue
 
             except Exception as error:
                 if self._shutdown.is_set():
                     break
+                consecutive_failures += 1
+                delay = min(
+                    RECONNECT_BASE_DELAY * 2 ** (consecutive_failures - 1),
+                    RECONNECT_MAX_DELAY,
+                )
                 print(
                     f"[{self.worker_name}] Disconnected: {error}, "
-                    f"retrying in 1s..."
+                    f"retrying in {delay}s..."
                 )
                 # Use event wait instead of sleep so shutdown is immediate
-                self._shutdown.wait(1)
+                self._shutdown.wait(delay)
 
     def _send_heartbeat(self, task_id, runner_id):
         """Send a single heartbeat to the server.
