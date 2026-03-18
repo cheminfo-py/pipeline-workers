@@ -60,10 +60,6 @@ def generate_conformers(data, parameters=None):
     if mol is None:
         raise ValueError("Failed to parse molfile")
 
-    # Ensure explicit hydrogens are present — xtb needs them for
-    # correct geometry optimization and IR calculations.
-    mol = Chem.AddHs(mol)
-
     # Generate a pool of conformers using ETKDGv3
     pool_size = max_conformers * pool_multiplier
     params = AllChem.ETKDGv3()
