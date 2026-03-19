@@ -406,8 +406,8 @@ def get_spectrum(modes, frequencies, intensities, start=0, end=4000,
 def compute_vibrational(data, parameters=None):
     """Run vibrational analysis on an optimized molfile using xtb-python + ASE.
 
-    Uses the same approach as xtbservice: ASE Infrared class for IR,
-    StaticRamanCalculator + PlaczekStatic for Raman.
+    The computation runs in a subprocess so that a Fortran crash in xtb
+    does not take down the main worker process.
 
     Args:
         data: Task input dict containing ``molfile`` (an optimized V2000 string).
@@ -428,10 +428,24 @@ def compute_vibrational(data, parameters=None):
 
     print(f"[{WORKER_NAME}] Parameters: method={method}")
 
+    from pipeline_worker.subprocess_run import run_in_subprocess
+
+    return run_in_subprocess(_run_vibrational, molfile, method)
+
+
+def _run_vibrational(molfile, method):
+    """Run the vibrational analysis in a subprocess.
+
+    Args:
+        molfile: Optimized V2000 molfile string.
+        method: xtb method name.
+
+    Returns:
+        Dict matching the xtbservice IRResult format.
+    """
     atoms, mol = molfile_to_ase(molfile)
     atoms.calc = XTB(method=method)
 
-    # Work in a temp directory for ASE cache files.
     work_dir = tempfile.mkdtemp(prefix="xtb_vib_")
     try:
         from pipeline_worker.suppress_output import suppress_fortran_output

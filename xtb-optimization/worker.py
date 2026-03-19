@@ -95,8 +95,8 @@ def update_molfile_coordinates(molfile, positions):
 def optimize_geometry(data, parameters=None):
     """Run xtb geometry optimization on a 3D molfile using ASE LBFGS.
 
-    Uses the same approach as xtbservice: ASE's LBFGS optimizer with
-    the xtb-python calculator.
+    The computation runs in a subprocess so that a Fortran crash in xtb
+    does not take down the main worker process.
 
     Args:
         data: Task input dict containing ``molfile`` (a V2000/V3000 string).
@@ -122,12 +122,30 @@ def optimize_geometry(data, parameters=None):
         f"fmax={fmax}, maxIter={max_iterations}"
     )
 
+    from pipeline_worker.subprocess_run import run_in_subprocess
+
+    return run_in_subprocess(
+        _run_optimization, molfile, method, fmax, max_iterations
+    )
+
+
+def _run_optimization(molfile, method, fmax, max_iterations):
+    """Run the xtb optimization in a subprocess.
+
+    Args:
+        molfile: V2000 molfile string.
+        method: xtb method name.
+        fmax: Force convergence criterion.
+        max_iterations: Max optimization steps.
+
+    Returns:
+        Dict with "molfile" (optimized) and "energy" (in eV).
+    """
     atoms = molfile_to_ase(molfile)
     mol = deepcopy(atoms)
     mol.pbc = False
     mol.calc = XTB(method=method)
 
-    # Work in a temp directory for xtb restart/scratch files.
     work_dir = tempfile.mkdtemp(prefix="xtb_opt_")
     try:
         from pipeline_worker.suppress_output import suppress_fortran_output
