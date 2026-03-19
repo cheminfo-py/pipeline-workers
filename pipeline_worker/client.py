@@ -82,7 +82,7 @@ def _get_system_info(runner_id):
         cpu_count = "1"
     return {
         "runnerId": runner_id,
-        "hostname": os.environ.get("WORKER_HOSTNAME", socket.gethostname()),
+        "hostname": socket.gethostname(),
         "cpuCount": os.environ.get("CPUS", cpu_count),
         "totalMemory": "0",
         "freeMemory": "0",

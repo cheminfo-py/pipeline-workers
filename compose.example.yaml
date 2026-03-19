@@ -5,6 +5,7 @@ services:
       dockerfile: xtb-optimization/Dockerfile
     restart: unless-stopped
     stop_grace_period: 3s
+    hostname: '${HOSTNAME:-worker}'
     read_only: true
     user: '65534:65534' # nobody/nogroup — run as non-root
     cap_drop:
@@ -36,6 +37,7 @@ services:
       dockerfile: xtb-vibrational/Dockerfile
     restart: unless-stopped
     stop_grace_period: 3s
+    hostname: '${HOSTNAME:-worker}'
     read_only: true
     user: '65534:65534'
     cap_drop:
@@ -67,6 +69,7 @@ services:
       dockerfile: rdkit-conformers/Dockerfile
     restart: unless-stopped
     stop_grace_period: 3s
+    hostname: '${HOSTNAME:-worker}'
     read_only: true
     user: '65534:65534'
     cap_drop:
