@@ -8,7 +8,8 @@ Python-based distributed workers for the [Pipeline](https://github.com/cheminfo/
 pipeline-workers/
 ├── pipeline_worker/         # Shared infrastructure package
 │   ├── __init__.py
-│   └── client.py            # WorkerClient class
+│   ├── client.py            # WorkerClient class
+│   └── subprocess_run.py    # Subprocess isolation for Fortran crashes
 ├── xtb-optimization/   # xtb geometry optimization worker
 │   ├── worker.py            # Processing logic + entry point
 │   ├── example.py           # Standalone local test script
@@ -24,6 +25,8 @@ pipeline-workers/
 │   ├── example.py
 │   ├── Dockerfile
 │   └── requirements.txt
+├── compose.yaml             # Docker Compose configuration
+├── .env.example             # Environment variable template
 └── README.md
 ```
 
@@ -148,15 +151,18 @@ my-worker:
   build:
     context: /path/to/pipeline-workers
     dockerfile: my-worker/Dockerfile
-  env_file:
-    - .env
   deploy:
     replicas: 4
+    resources:
+      limits:
+        memory: '4G'
+        cpus: '1'
+  volumes:
+    - /etc/hostname:/etc/host_hostname:ro
   environment:
-    - SERVER_URL=http://pipeline:60313
+    - TOKEN=${TOKEN}
+    - SERVER_URL=${SERVER_URL}
     - CPUS=1
-  depends_on:
-    - pipeline
 ```
 
 ### 7. Register the worker in the Pipeline server
@@ -282,18 +288,30 @@ client.run()                    # Starts listening (blocks forever)
 
 ### Environment variables
 
-| Variable     | Description                         | Default                                |
-| ------------ | ----------------------------------- | -------------------------------------- |
-| `SERVER_URL` | Pipeline server URL                 | `http://localhost:5172`                |
-| `TOKEN`      | Authentication token                | `f47ac10b-58cc-4372-a567-0e02b2c3d479` |
-| `CPUS`       | Number of CPUs per container         | `1`                                    |
+| Variable           | Description                                        | Default                                |
+| ------------------ | -------------------------------------------------- | -------------------------------------- |
+| `SERVER_URL`       | Pipeline server URL                                | `http://localhost:5172`                |
+| `TOKEN`            | Authentication token                               | `f47ac10b-58cc-4372-a567-0e02b2c3d479` |
+| `CPUS`             | Number of CPUs per container                       | `1`                                    |
+| `WORKER_HOSTNAME`  | Host machine hostname reported to server           | auto-detected                          |
+
+### Hostname detection
+
+The hostname reported to the server is resolved in this order:
+
+1. `WORKER_HOSTNAME` environment variable (set in `.env`)
+2. `/etc/host_hostname` file (mounted from Docker host via `compose.yaml`)
+3. `socket.gethostname()` (container ID as last resort)
+
+To set the hostname manually: `echo "WORKER_HOSTNAME=$(hostname)" >> .env`
 
 ### What WorkerClient handles
 
-- SSE connection with automatic reconnection
+- SSE connection with automatic reconnection and exponential backoff
 - Heartbeat messages every 30 seconds during task execution
 - Result posting with exponential-backoff retries (3 attempts)
 - Per-instance runner ID and system metadata
-- Thread-safe statistics tracking (completed/failed tasks, average time)
+- Statistics tracking (completed/failed tasks, average time)
 - Parallel scaling via Docker Compose `deploy.replicas`
 - Per-container CPU control via `CPUS` (sets OMP/MKL/OpenBLAS thread count)
+- Subprocess isolation for xtb workers (Fortran crashes don't kill the container)
