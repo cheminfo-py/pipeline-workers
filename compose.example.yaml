@@ -5,7 +5,6 @@ services:
       dockerfile: xtb-optimization/Dockerfile
     restart: unless-stopped
     stop_grace_period: 3s
-    hostname: '${HOSTNAME:-worker}'
     read_only: true
     user: '65534:65534' # nobody/nogroup — run as non-root
     cap_drop:
@@ -29,6 +28,7 @@ services:
     environment:
       - TOKEN=${TOKEN}
       - SERVER_URL=${SERVER_URL}
+      - WORKER_HOSTNAME=${HOSTNAME}
       - CPUS=${XTB_OPT_CPUS:-1}
 
   xtb-vibrational-worker:
@@ -37,7 +37,6 @@ services:
       dockerfile: xtb-vibrational/Dockerfile
     restart: unless-stopped
     stop_grace_period: 3s
-    hostname: '${HOSTNAME:-worker}'
     read_only: true
     user: '65534:65534'
     cap_drop:
@@ -61,6 +60,7 @@ services:
     environment:
       - TOKEN=${TOKEN}
       - SERVER_URL=${SERVER_URL}
+      - WORKER_HOSTNAME=${HOSTNAME}
       - CPUS=${XTB_VIB_CPUS:-1}
 
   rdkit-conformers-worker:
@@ -69,7 +69,6 @@ services:
       dockerfile: rdkit-conformers/Dockerfile
     restart: unless-stopped
     stop_grace_period: 3s
-    hostname: '${HOSTNAME:-worker}'
     read_only: true
     user: '65534:65534'
     cap_drop:
@@ -93,4 +92,5 @@ services:
     environment:
       - TOKEN=${TOKEN}
       - SERVER_URL=${SERVER_URL}
+      - WORKER_HOSTNAME=${HOSTNAME}
       - CPUS=${RDKIT_CONFORMERS_CPUS:-1}
