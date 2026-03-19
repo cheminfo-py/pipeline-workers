@@ -67,6 +67,19 @@ class _TeeStream:
         self.original.flush()
 
 
+def _read_host_hostname():
+    """Read the host machine's hostname from a mounted file.
+
+    Returns:
+        Hostname string, or empty string if the file is not available.
+    """
+    try:
+        with open("/etc/host_hostname") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
 def _get_system_info(runner_id):
     """Gather system metadata sent on each SSE connection.
 
@@ -82,7 +95,7 @@ def _get_system_info(runner_id):
         cpu_count = "1"
     return {
         "runnerId": runner_id,
-        "hostname": os.environ.get("WORKER_HOSTNAME", socket.gethostname()),
+        "hostname": os.environ.get("WORKER_HOSTNAME") or _read_host_hostname() or socket.gethostname(),
         "cpuCount": os.environ.get("CPUS", cpu_count),
         "totalMemory": "0",
         "freeMemory": "0",

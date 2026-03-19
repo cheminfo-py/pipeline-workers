@@ -23,12 +23,14 @@ services:
       options:
         max-size: 200m
         max-file: '3'
+    volumes:
+      - /etc/hostname:/etc/host_hostname:ro
     tmpfs:
       - /tmp:size=500m,nosuid
     environment:
       - TOKEN=${TOKEN}
       - SERVER_URL=${SERVER_URL}
-      - WORKER_HOSTNAME=${HOSTNAME}
+      - WORKER_HOSTNAME=${WORKER_HOSTNAME:-}
       - CPUS=${XTB_OPT_CPUS:-1}
 
   xtb-vibrational-worker:
@@ -55,12 +57,14 @@ services:
       options:
         max-size: 200m
         max-file: '3'
+    volumes:
+      - /etc/hostname:/etc/host_hostname:ro
     tmpfs:
       - /tmp:size=500m,nosuid
     environment:
       - TOKEN=${TOKEN}
       - SERVER_URL=${SERVER_URL}
-      - WORKER_HOSTNAME=${HOSTNAME}
+      - WORKER_HOSTNAME=${WORKER_HOSTNAME:-}
       - CPUS=${XTB_VIB_CPUS:-1}
 
   rdkit-conformers-worker:
@@ -87,10 +91,12 @@ services:
       options:
         max-size: 200m
         max-file: '3'
+    volumes:
+      - /etc/hostname:/etc/host_hostname:ro
     tmpfs:
       - /tmp:size=100m,noexec,nosuid
     environment:
       - TOKEN=${TOKEN}
       - SERVER_URL=${SERVER_URL}
-      - WORKER_HOSTNAME=${HOSTNAME}
+      - WORKER_HOSTNAME=${WORKER_HOSTNAME:-}
       - CPUS=${RDKIT_CONFORMERS_CPUS:-1}
