@@ -12,11 +12,13 @@ Requirements:
 Environment variables:
     SERVER_URL  - Pipeline server URL (default: http://localhost:5172)
     TOKEN       - Authentication token for the pipeline server
-    INSTANCES   - Number of worker instances to run (default: 1)
+    CPUS        - Number of CPUs for this container (default: 1)
 
 Usage:
     SERVER_URL=http://pipeline.cheminfo.org TOKEN=your-token python worker.py
 """
+
+import os
 
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdMolAlign
@@ -64,7 +66,7 @@ def generate_conformers(data, parameters=None):
     pool_size = max_conformers * pool_multiplier
     params = AllChem.ETKDGv3()
     params.pruneRmsThresh = rmsd_threshold
-    params.numThreads = 1
+    params.numThreads = int(os.environ.get("CPUS", "1"))
     params.randomSeed = 42
 
     conf_ids = AllChem.EmbedMultipleConfs(mol, numConfs=pool_size, params=params)

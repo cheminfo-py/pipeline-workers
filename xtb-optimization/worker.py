@@ -12,7 +12,7 @@ Requirements:
 Environment variables:
     SERVER_URL  - Pipeline server URL (default: http://localhost:5172)
     TOKEN       - Authentication token for the pipeline server
-    INSTANCES   - Number of worker instances to run (default: 1)
+    CPUS        - Number of CPUs for this container (default: 1)
 
 Usage:
     SERVER_URL=http://pipeline.cheminfo.org TOKEN=your-token python worker.py
@@ -22,7 +22,6 @@ import os
 import re
 import shutil
 import tempfile
-import threading
 from copy import deepcopy
 
 from ase import Atoms
@@ -30,18 +29,14 @@ from ase.optimize.lbfgs import LBFGS
 from rdkit import Chem
 from xtb.ase.calculator import XTB
 
-# Force single-threaded math libraries so each worker instance uses exactly
-# one core.  With INSTANCES=8 and 8 CPUs, every core runs one xtb process.
-# Without this, each xtb spawns many OpenBLAS/OMP threads, exhausting the
-# container PID limit and causing "[Errno 11] Resource temporarily unavailable".
+# Set math library thread count from CPUS env var.
+# Without this, xtb spawns many OpenBLAS/OMP threads, exhausting the container
+# PID limit and causing "[Errno 11] Resource temporarily unavailable".
+_cpus = os.environ.get("CPUS", "1")
 for thread_var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
-    os.environ.setdefault(thread_var, "1")
+    os.environ.setdefault(thread_var, _cpus)
 
 WORKER_NAME = "xtbOptimization"
-
-# Lock to serialize os.chdir() calls — chdir is process-wide, not thread-safe.
-# Without this, concurrent INSTANCES clobber each other's working directory.
-_chdir_lock = threading.Lock()
 
 # Regex for a V2000 atom line: x y z symbol ...
 ATOM_RE = re.compile(
@@ -133,19 +128,18 @@ def optimize_geometry(data, parameters=None):
     mol.calc = XTB(method=method)
 
     # Work in a temp directory for xtb restart/scratch files.
-    # The lock serializes chdir — it is process-wide, not thread-safe.
     work_dir = tempfile.mkdtemp(prefix="xtb_opt_")
     try:
         from pipeline_worker.suppress_output import suppress_fortran_output
-        with _chdir_lock, suppress_fortran_output():
-            original_dir = os.getcwd()
-            os.chdir(work_dir)
-            try:
+        original_dir = os.getcwd()
+        os.chdir(work_dir)
+        try:
+            with suppress_fortran_output():
                 opt = LBFGS(mol, logfile=None)
                 opt.run(fmax=fmax, steps=max_iterations)
                 energy = float(mol.get_potential_energy())
-            finally:
-                os.chdir(original_dir)
+        finally:
+            os.chdir(original_dir)
         optimized_molfile = update_molfile_coordinates(molfile, mol.positions)
 
         return {"molfile": optimized_molfile, "energy": energy}

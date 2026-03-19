@@ -15,7 +15,7 @@ Requirements:
 Environment variables:
     SERVER_URL  - Pipeline server URL (default: http://localhost:5172)
     TOKEN       - Authentication token for the pipeline server
-    INSTANCES   - Number of worker instances to run (default: 1)
+    CPUS        - Number of CPUs for this container (default: 1)
 
 Usage:
     SERVER_URL=http://pipeline.cheminfo.org TOKEN=your-token python worker.py
@@ -24,7 +24,6 @@ Usage:
 import os
 import shutil
 import tempfile
-import threading
 from math import log, pi, sqrt
 
 import numpy as np
@@ -37,15 +36,12 @@ from rdkit import Chem
 from scipy import spatial
 from xtb.ase.calculator import XTB
 
-# Force single-threaded math libraries so each worker instance uses exactly
-# one core.
+# Set math library thread count from CPUS env var.
+_cpus = os.environ.get("CPUS", "1")
 for thread_var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
-    os.environ.setdefault(thread_var, "1")
+    os.environ.setdefault(thread_var, _cpus)
 
 WORKER_NAME = "xtbVibrational"
-
-# Lock to serialize os.chdir() calls — chdir is process-wide, not thread-safe.
-_chdir_lock = threading.Lock()
 
 # Threshold for "large" imaginary frequency (cm-1)
 IMAGINARY_FREQ_THRESHOLD = 10
@@ -436,7 +432,6 @@ def compute_vibrational(data, parameters=None):
     atoms.calc = XTB(method=method)
 
     # Work in a temp directory for ASE cache files.
-    # The lock serializes chdir — it is process-wide, not thread-safe.
     work_dir = tempfile.mkdtemp(prefix="xtb_vib_")
     try:
         from pipeline_worker.suppress_output import suppress_fortran_output
@@ -444,10 +439,10 @@ def compute_vibrational(data, parameters=None):
         raman_intensities = None
         raman_spectrum = None
 
-        with _chdir_lock, suppress_fortran_output():
-            original_dir = os.getcwd()
-            os.chdir(work_dir)
-            try:
+        original_dir = os.getcwd()
+        os.chdir(work_dir)
+        try:
+            with suppress_fortran_output():
                 # Compute IR first (always works)
                 ir = Infrared(atoms, name="ir")
                 ir.run()
@@ -463,8 +458,8 @@ def compute_vibrational(data, parameters=None):
                     raman_intensities = pz.get_absolute_intensities()
                 except Exception:
                     pass  # Raman fails for some molecules — IR still valid
-            finally:
-                os.chdir(original_dir)
+        finally:
+            os.chdir(original_dir)
 
         zpe = float(ir.get_zero_point_energy())
         moi = atoms.get_moments_of_inertia()

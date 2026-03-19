@@ -12,10 +12,11 @@ services:
     security_opt:
       - no-new-privileges:true
     deploy:
+      replicas: ${XTB_OPT_REPLICAS:-1}
       resources:
         limits:
-          memory: ${XTB_OPT_MEMORY:-4G}
-          cpus: '${XTB_OPT_CPUS:-8}'
+          memory: '${XTB_OPT_MEMORY:-4G}'
+          cpus: '${XTB_OPT_CPUS:-1}'
           pids: 256
     logging:
       driver: json-file
@@ -24,8 +25,10 @@ services:
         max-file: '3'
     tmpfs:
       - /tmp:size=500m,nosuid
-    env_file:
-      - .env
+    environment:
+      - TOKEN=${TOKEN}
+      - SERVER_URL=${SERVER_URL}
+      - CPUS=${XTB_OPT_CPUS:-1}
 
   xtb-vibrational-worker:
     build:
@@ -40,10 +43,11 @@ services:
     security_opt:
       - no-new-privileges:true
     deploy:
+      replicas: ${XTB_VIB_REPLICAS:-1}
       resources:
         limits:
-          memory: ${XTB_VIB_MEMORY:-4G}
-          cpus: '${XTB_VIB_CPUS:-8}'
+          memory: '${XTB_VIB_MEMORY:-4G}'
+          cpus: '${XTB_VIB_CPUS:-1}'
           pids: 256
     logging:
       driver: json-file
@@ -52,8 +56,10 @@ services:
         max-file: '3'
     tmpfs:
       - /tmp:size=500m,nosuid
-    env_file:
-      - .env
+    environment:
+      - TOKEN=${TOKEN}
+      - SERVER_URL=${SERVER_URL}
+      - CPUS=${XTB_VIB_CPUS:-1}
 
   rdkit-conformers-worker:
     build:
@@ -68,10 +74,11 @@ services:
     security_opt:
       - no-new-privileges:true
     deploy:
+      replicas: ${RDKIT_CONFORMERS_REPLICAS:-1}
       resources:
         limits:
-          memory: ${RDKIT_CONFORMERS_MEMORY:-2G}
-          cpus: '${RDKIT_CONFORMERS_CPUS:-4}'
+          memory: '${RDKIT_CONFORMERS_MEMORY:-2G}'
+          cpus: '${RDKIT_CONFORMERS_CPUS:-1}'
           pids: 256
     logging:
       driver: json-file
@@ -80,5 +87,7 @@ services:
         max-file: '3'
     tmpfs:
       - /tmp:size=100m,noexec,nosuid
-    env_file:
-      - .env
+    environment:
+      - TOKEN=${TOKEN}
+      - SERVER_URL=${SERVER_URL}
+      - CPUS=${RDKIT_CONFORMERS_CPUS:-1}

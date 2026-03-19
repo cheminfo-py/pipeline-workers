@@ -30,7 +30,8 @@ RECONNECT_BASE_DELAY = 1
 RECONNECT_MAX_DELAY = 30
 
 
-_thread_local = threading.local()
+# Global log buffer — single-threaded, no need for thread-local storage.
+_log_buffer = None
 
 
 def log(text):
@@ -42,18 +43,16 @@ def log(text):
     Args:
         text: Text to append to the log buffer.
     """
-    buf = getattr(_thread_local, "log_buffer", None)
-    if buf is not None and text:
-        buf.write(text)
+    global _log_buffer
+    if _log_buffer is not None and text:
+        _log_buffer.write(text)
 
 
 class _TeeStream:
-    """Write to the original stream and the current thread's log buffer.
+    """Write to the original stream and the log buffer.
 
-    Installed once on ``sys.stdout``/``sys.stderr``. Per-thread capture is
-    controlled by setting ``_thread_local.log_buffer`` to an ``io.StringIO``
-    before calling the worker function and clearing it afterwards.  This
-    avoids the race condition of swapping ``sys.stdout`` per-thread.
+    Installed on ``sys.stdout``/``sys.stderr`` so that print output from the
+    worker's processing function is captured and sent to the server as logs.
     """
 
     def __init__(self, original):
@@ -61,9 +60,8 @@ class _TeeStream:
 
     def write(self, text):
         self.original.write(text)
-        buf = getattr(_thread_local, "log_buffer", None)
-        if buf is not None:
-            buf.write(text)
+        if _log_buffer is not None:
+            _log_buffer.write(text)
 
     def flush(self):
         self.original.flush()
@@ -94,6 +92,9 @@ def _get_system_info(runner_id):
 class WorkerClient:
     """Connects to the Pipeline server, receives tasks via SSE, and posts results.
 
+    Each Docker container runs a single WorkerClient instance. Use Docker
+    Compose ``deploy.replicas`` to run multiple instances in parallel.
+
     Args:
         worker_name: Name of the worker as registered in the Pipeline server.
         process_fn: Callable ``(data, parameters) -> result`` that performs
@@ -120,8 +121,7 @@ class WorkerClient:
         # Shutdown flag — set by SIGTERM/SIGINT handler
         self._shutdown = threading.Event()
 
-        # Thread-safe statistics shared across instances
-        self._stats_lock = threading.Lock()
+        # Statistics for this instance
         self._stats = {
             "completedTasks": 0,
             "failedTasks": 0,
@@ -133,14 +133,8 @@ class WorkerClient:
     # --- Public API ---
 
     def run(self):
-        """Start the worker, spawning multiple instances if configured.
-
-        Reads the ``INSTANCES`` environment variable (default ``1``) to
-        determine how many listener threads to start.  Handles SIGTERM and
-        SIGINT for fast Docker shutdown.
-        """
-        # Install TeeStream once — per-thread capture is controlled via
-        # _thread_local.log_buffer set/cleared around each task.
+        """Start the worker. Handles SIGTERM and SIGINT for fast Docker shutdown."""
+        # Install TeeStream to capture print output during task processing.
         sys.stdout = _TeeStream(sys.stdout)
         sys.stderr = _TeeStream(sys.stderr)
 
@@ -152,35 +146,13 @@ class WorkerClient:
         signal.signal(signal.SIGTERM, _handle_signal)
         signal.signal(signal.SIGINT, _handle_signal)
 
-        instances = int(os.environ.get("INSTANCES", "1"))
+        cpus = os.environ.get("CPUS", "1")
         print(
-            f"[{self.worker_name}] Starting {instances} instance(s), "
+            f"[{self.worker_name}] Starting, "
+            f"{cpus} CPU(s), "
             f"server={self.server_url}"
         )
-        if instances > 1:
-            threads = []
-            for _ in range(instances):
-                thread = threading.Thread(target=self._listen, daemon=True)
-                thread.start()
-                threads.append(thread)
-            # Monitor threads and restart any that die unexpectedly
-            while not self._shutdown.is_set():
-                self._shutdown.wait(5)
-                if self._shutdown.is_set():
-                    break
-                for index, thread in enumerate(threads):
-                    if not thread.is_alive():
-                        print(
-                            f"[{self.worker_name}] Instance thread died, "
-                            f"restarting..."
-                        )
-                        thread = threading.Thread(
-                            target=self._listen, daemon=True
-                        )
-                        thread.start()
-                        threads[index] = thread
-        else:
-            self._listen()
+        self._listen()
 
         print(f"[{self.worker_name}] Stopped.")
         sys.exit(0)
@@ -189,6 +161,8 @@ class WorkerClient:
 
     def _listen(self):
         """Connect to the SSE endpoint and process tasks in a loop."""
+        global _log_buffer
+
         runner_id = str(uuid.uuid4())
         consecutive_failures = 0
 
@@ -228,55 +202,47 @@ class WorkerClient:
                             task_id, runner_id
                         )
 
-                        # Enable per-thread log capture via _TeeStream
-                        _thread_local.log_buffer = io.StringIO()
+                        # Enable log capture
+                        _log_buffer = io.StringIO()
 
                         start = time.time()
                         try:
                             result = self.process_fn(data, parameters)
                             duration_ms = (time.time() - start) * 1000
-                            with self._stats_lock:
-                                self._stats["completedTasks"] += 1
-                                self._total_time_ms += duration_ms
-                                self._stats["averageTaskTimeMs"] = int(
-                                    self._total_time_ms
-                                    / self._stats["completedTasks"]
-                                )
-                                current_stats = dict(self._stats)
+                            self._stats["completedTasks"] += 1
+                            self._total_time_ms += duration_ms
+                            self._stats["averageTaskTimeMs"] = int(
+                                self._total_time_ms
+                                / self._stats["completedTasks"]
+                            )
                             logs = (
-                                _thread_local.log_buffer.getvalue()[
-                                    :MAX_LOG_SIZE
-                                ]
+                                _log_buffer.getvalue()[:MAX_LOG_SIZE]
                                 or None
                             )
                             self._post_result(
-                                task_id, result, runner_id, current_stats,
-                                logs
+                                task_id, result, runner_id,
+                                dict(self._stats), logs
                             )
                             print(
                                 f"[{self.worker_name}] Task {task_id} "
                                 f"completed ({duration_ms:.0f}ms)"
                             )
                         except Exception as error:
-                            with self._stats_lock:
-                                self._stats["failedTasks"] += 1
-                                current_stats = dict(self._stats)
+                            self._stats["failedTasks"] += 1
                             logs = (
-                                _thread_local.log_buffer.getvalue()[
-                                    :MAX_LOG_SIZE
-                                ]
+                                _log_buffer.getvalue()[:MAX_LOG_SIZE]
                                 or None
                             )
                             self._post_error(
-                                task_id, str(error), runner_id, current_stats,
-                                logs
+                                task_id, str(error), runner_id,
+                                dict(self._stats), logs
                             )
                             print(
                                 f"[{self.worker_name}] Task {task_id} "
                                 f"failed: {error}"
                             )
                         finally:
-                            _thread_local.log_buffer = None
+                            _log_buffer = None
                             stop_heartbeat.set()
                 else:
                     # SSE stream ended without error (server closed

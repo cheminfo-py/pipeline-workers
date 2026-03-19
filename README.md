@@ -150,9 +150,11 @@ my-worker:
     dockerfile: my-worker/Dockerfile
   env_file:
     - .env
+  deploy:
+    replicas: 4
   environment:
     - SERVER_URL=http://pipeline:60313
-    - INSTANCES=4
+    - CPUS=1
   depends_on:
     - pipeline
 ```
@@ -284,7 +286,7 @@ client.run()                    # Starts listening (blocks forever)
 | ------------ | ----------------------------------- | -------------------------------------- |
 | `SERVER_URL` | Pipeline server URL                 | `http://localhost:5172`                |
 | `TOKEN`      | Authentication token                | `f47ac10b-58cc-4372-a567-0e02b2c3d479` |
-| `INSTANCES`  | Number of concurrent worker threads | `1`                                    |
+| `CPUS`       | Number of CPUs per container         | `1`                                    |
 
 ### What WorkerClient handles
 
@@ -293,4 +295,5 @@ client.run()                    # Starts listening (blocks forever)
 - Result posting with exponential-backoff retries (3 attempts)
 - Per-instance runner ID and system metadata
 - Thread-safe statistics tracking (completed/failed tasks, average time)
-- Multi-instance threading via the `INSTANCES` environment variable
+- Parallel scaling via Docker Compose `deploy.replicas`
+- Per-container CPU control via `CPUS` (sets OMP/MKL/OpenBLAS thread count)

@@ -1,8 +1,8 @@
 """Reusable infrastructure for Pipeline distributed workers.
 
-Handles SSE connection, heartbeat, result posting, statistics tracking,
-and multi-instance threading. Worker authors only need to provide a
-processing function.
+Handles SSE connection, heartbeat, result posting, and statistics tracking.
+Worker authors only need to provide a processing function. Use Docker
+Compose ``deploy.replicas`` to run multiple instances in parallel.
 
 Usage::
 
