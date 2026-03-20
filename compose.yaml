@@ -67,6 +67,40 @@ services:
       - WORKER_HOSTNAME=${WORKER_HOSTNAME:-}
       - CPUS=${XTB_VIB_CPUS:-1}
 
+  psi4-optimization-worker:
+    build:
+      context: .
+      dockerfile: psi4-optimization/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 3s
+    read_only: true
+    user: '65534:65534' # nobody/nogroup — run as non-root
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      replicas: ${PSI4_OPT_REPLICAS:-1}
+      resources:
+        limits:
+          memory: '${PSI4_OPT_MEMORY:-8G}'
+          cpus: '${PSI4_OPT_CPUS:-2}'
+          pids: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 200m
+        max-file: '3'
+    volumes:
+      - /etc/hostname:/etc/host_hostname:ro
+    tmpfs:
+      - /tmp:size=1g,nosuid
+    environment:
+      - TOKEN=${TOKEN}
+      - SERVER_URL=${SERVER_URL}
+      - WORKER_HOSTNAME=${WORKER_HOSTNAME:-}
+      - CPUS=${PSI4_OPT_CPUS:-2}
+
   rdkit-conformers-worker:
     build:
       context: .
