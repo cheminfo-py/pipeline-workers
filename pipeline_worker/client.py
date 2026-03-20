@@ -15,7 +15,6 @@ import threading
 import time
 import uuid
 
-import psutil
 import requests
 import sseclient
 
@@ -81,6 +80,38 @@ def _read_host_hostname():
         return ""
 
 
+def _read_cgroup_int(path):
+    """Read an integer value from a cgroup file.
+
+    Args:
+        path: Absolute path to the cgroup file.
+
+    Returns:
+        Integer value, or 0 if the file cannot be read or contains "max".
+    """
+    try:
+        with open(path) as f:
+            value = f.read().strip()
+        if value == "max":
+            return 0
+        return int(value)
+    except (OSError, ValueError):
+        return 0
+
+
+def _get_container_memory():
+    """Read container memory limit and usage from cgroup v2 files.
+
+    Returns:
+        Tuple of (total_bytes, free_bytes). Returns (0, 0) when not
+        running inside a container or cgroup files are unavailable.
+    """
+    total = _read_cgroup_int("/sys/fs/cgroup/memory.max")
+    current = _read_cgroup_int("/sys/fs/cgroup/memory.current")
+    free = max(total - current, 0) if total > 0 else 0
+    return total, free
+
+
 def _get_system_info(runner_id):
     """Gather system metadata sent on each SSE connection.
 
@@ -94,13 +125,13 @@ def _get_system_info(runner_id):
         cpu_count = str(os.cpu_count() or 1)
     except Exception:
         cpu_count = "1"
-    memory = psutil.virtual_memory()
+    total_memory, free_memory = _get_container_memory()
     return {
         "runnerId": runner_id,
         "hostname": os.environ.get("WORKER_HOSTNAME") or _read_host_hostname() or socket.gethostname(),
         "cpuCount": os.environ.get("CPUS", cpu_count),
-        "totalMemory": str(memory.total),
-        "freeMemory": str(memory.available),
+        "totalMemory": str(total_memory),
+        "freeMemory": str(free_memory),
     }
 
 
@@ -230,9 +261,8 @@ class WorkerClient:
                                 self._total_time_ms
                                 / self._stats["completedTasks"]
                             )
-                            self._stats["freeMemory"] = (
-                                psutil.virtual_memory().available
-                            )
+                            _, free = _get_container_memory()
+                            self._stats["freeMemory"] = free
                             logs = (
                                 _log_buffer.getvalue()[:MAX_LOG_SIZE]
                                 or None
@@ -247,9 +277,8 @@ class WorkerClient:
                             )
                         except Exception as error:
                             self._stats["failedTasks"] += 1
-                            self._stats["freeMemory"] = (
-                                psutil.virtual_memory().available
-                            )
+                            _, free = _get_container_memory()
+                            self._stats["freeMemory"] = free
                             logs = (
                                 _log_buffer.getvalue()[:MAX_LOG_SIZE]
                                 or None
