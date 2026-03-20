@@ -15,6 +15,7 @@ import threading
 import time
 import uuid
 
+import psutil
 import requests
 import sseclient
 
@@ -93,12 +94,13 @@ def _get_system_info(runner_id):
         cpu_count = str(os.cpu_count() or 1)
     except Exception:
         cpu_count = "1"
+    memory = psutil.virtual_memory()
     return {
         "runnerId": runner_id,
         "hostname": os.environ.get("WORKER_HOSTNAME") or _read_host_hostname() or socket.gethostname(),
         "cpuCount": os.environ.get("CPUS", cpu_count),
-        "totalMemory": "0",
-        "freeMemory": "0",
+        "totalMemory": str(memory.total),
+        "freeMemory": str(memory.available),
     }
 
 
@@ -228,6 +230,9 @@ class WorkerClient:
                                 self._total_time_ms
                                 / self._stats["completedTasks"]
                             )
+                            self._stats["freeMemory"] = (
+                                psutil.virtual_memory().available
+                            )
                             logs = (
                                 _log_buffer.getvalue()[:MAX_LOG_SIZE]
                                 or None
@@ -242,6 +247,9 @@ class WorkerClient:
                             )
                         except Exception as error:
                             self._stats["failedTasks"] += 1
+                            self._stats["freeMemory"] = (
+                                psutil.virtual_memory().available
+                            )
                             logs = (
                                 _log_buffer.getvalue()[:MAX_LOG_SIZE]
                                 or None
